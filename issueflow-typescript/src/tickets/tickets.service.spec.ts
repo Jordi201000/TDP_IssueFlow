@@ -11,6 +11,7 @@ import { PreconditionRequiredException } from '../common/exceptions/precondition
 import { TicketPriority } from '../common/enums/ticket-priority.enum';
 import { TicketStatus } from '../common/enums/ticket-status.enum';
 import { TicketType } from '../common/enums/ticket-type.enum';
+import { TicketDependency } from '../dependencies/entities/ticket-dependency.entity';
 import { Project } from '../projects/entities/project.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { User } from '../users/entities/user.entity';
@@ -32,6 +33,7 @@ function makeRepo(): jest.Mocked<Repository<Ticket>> {
 describe('TicketsService', () => {
   let service: TicketsService;
   let repo: jest.Mocked<Repository<Ticket>>;
+  let depsRepo: jest.Mocked<Repository<TicketDependency>>;
   let projects: jest.Mocked<Pick<ProjectsService, 'findOne'>>;
   let users: jest.Mocked<Pick<UsersService, 'findOne'>>;
 
@@ -46,6 +48,9 @@ describe('TicketsService', () => {
 
   beforeEach(async () => {
     repo = makeRepo();
+    depsRepo = {
+      find: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<Repository<TicketDependency>>;
     projects = { findOne: jest.fn() };
     users = { findOne: jest.fn() };
 
@@ -53,6 +58,7 @@ describe('TicketsService', () => {
       providers: [
         TicketsService,
         { provide: getRepositoryToken(Ticket), useValue: repo },
+        { provide: getRepositoryToken(TicketDependency), useValue: depsRepo },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
         { provide: AuditLogService, useValue: { record: jest.fn() } },
@@ -228,6 +234,57 @@ describe('TicketsService', () => {
     it('throws NotFoundException when nothing was deleted', async () => {
       repo.softDelete.mockResolvedValueOnce({ affected: 0, raw: {} } as never);
       await expect(service.softDelete(1)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('DONE-blocker integration (Phase 7)', () => {
+    function ticketWithBlockers() {
+      return {
+        id: 1,
+        title: 't',
+        description: 'd',
+        status: TicketStatus.IN_PROGRESS,
+        priority: TicketPriority.HIGH,
+        type: TicketType.BUG,
+        projectId: 1,
+        assigneeId: null,
+        dueDate: null,
+        isOverdue: false,
+        version: 1,
+      } as Ticket;
+    }
+
+    it('rejects transition to DONE when open blockers exist', async () => {
+      repo.findOne.mockResolvedValueOnce(ticketWithBlockers());
+      depsRepo.find.mockResolvedValueOnce([
+        { ticketId: 1, blockerId: 2 } as TicketDependency,
+        { ticketId: 1, blockerId: 3 } as TicketDependency,
+      ]);
+      repo.find.mockResolvedValueOnce([
+        { id: 2 } as Ticket, // 2 is not DONE
+      ]);
+
+      const err = await service
+        .update(1, { status: TicketStatus.DONE }, 1)
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toMatch(/open blockers \[2\]/);
+    });
+
+    it('allows transition to DONE when all blockers are DONE', async () => {
+      repo.findOne.mockResolvedValueOnce(ticketWithBlockers());
+      depsRepo.find.mockResolvedValueOnce([
+        { ticketId: 1, blockerId: 2 } as TicketDependency,
+      ]);
+      repo.find.mockResolvedValueOnce([]); // no open blockers
+      repo.save.mockImplementation(async (t) => t as Ticket);
+
+      const result = await service.update(
+        1,
+        { status: TicketStatus.DONE },
+        1,
+      );
+      expect(result.status).toBe(TicketStatus.DONE);
     });
   });
 });

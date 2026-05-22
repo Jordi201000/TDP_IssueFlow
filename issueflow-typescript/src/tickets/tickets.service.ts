@@ -5,13 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/enums/audit-action.enum';
 import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { AuditContext } from '../audit-log/interfaces/audit-context.interface';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
 import { TicketStatus, isForwardOrSame } from '../common/enums/ticket-status.enum';
+import { TicketDependency } from '../dependencies/entities/ticket-dependency.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -23,10 +24,27 @@ export class TicketsService {
   constructor(
     @InjectRepository(Ticket)
     private readonly tickets: Repository<Ticket>,
+    @InjectRepository(TicketDependency)
+    private readonly deps: Repository<TicketDependency>,
     private readonly projects: ProjectsService,
     private readonly users: UsersService,
     private readonly audit: AuditLogService,
   ) {}
+
+  /**
+   * Returns blocker ticket ids that are not yet DONE.
+   * Used by `update()` to enforce the §3.2 rule: a ticket cannot transition
+   * to DONE if it has unresolved blockers.
+   */
+  async openBlockerIds(ticketId: number): Promise<number[]> {
+    const edges = await this.deps.find({ where: { ticketId } });
+    if (edges.length === 0) return [];
+    const blockerIds = edges.map((e) => e.blockerId);
+    const openBlockers = await this.tickets.find({
+      where: { id: In(blockerIds), status: Not(TicketStatus.DONE) },
+    });
+    return openBlockers.map((b) => b.id);
+  }
 
   async create(dto: CreateTicketDto, ctx?: AuditContext): Promise<Ticket> {
     const project = await this.projects.findOne(dto.projectId).catch(() => null);
@@ -132,7 +150,14 @@ export class TicketsService {
       }
     }
 
-    // TODO Phase 7: when dto.status === DONE, refuse if open blockers exist.
+    if (dto.status === TicketStatus.DONE) {
+      const openBlockers = await this.openBlockerIds(id);
+      if (openBlockers.length > 0) {
+        throw new BadRequestException(
+          `Ticket cannot transition to DONE: open blockers [${openBlockers.join(', ')}]`,
+        );
+      }
+    }
 
     if (dto.title !== undefined) ticket.title = dto.title;
     if (dto.description !== undefined) ticket.description = dto.description;

@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CommentsModule } from './comments/comments.module';
 import { configuration, AppConfig } from './config/configuration';
+import { DependenciesModule } from './dependencies/dependencies.module';
 import { HealthModule } from './health/health.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TicketsModule } from './tickets/tickets.module';
@@ -53,6 +54,7 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
     TicketsModule,
     CommentsModule,
     AuditLogModule,
+    DependenciesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
