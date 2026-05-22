@@ -22,6 +22,8 @@ import {
 import { TicketDependency } from '../dependencies/entities/ticket-dependency.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
+import { WorkloadService } from '../workload/workload.service';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
@@ -36,6 +38,7 @@ export class TicketsService {
     private readonly projects: ProjectsService,
     private readonly users: UsersService,
     private readonly audit: AuditLogService,
+    private readonly workload: WorkloadService,
   ) {}
 
   /**
@@ -59,12 +62,24 @@ export class TicketsService {
       throw new BadRequestException(`Project ${dto.projectId} does not exist`);
     }
 
+    // Explicit assignee: validate user exists (per existing rule).
     if (dto.assigneeId !== undefined && dto.assigneeId !== null) {
       const assignee = await this.users.findOne(dto.assigneeId).catch(() => null);
       if (!assignee) {
         throw new BadRequestException(
           `Assignee user ${dto.assigneeId} does not exist`,
         );
+      }
+    }
+
+    // Auto-assign when assigneeId omitted (§3.8). Null result OK (no devs linked).
+    let resolvedAssignee: number | null = dto.assigneeId ?? null;
+    let autoAssigned = false;
+    if (resolvedAssignee === null) {
+      const picked = await this.workload.pickAutoAssignee(dto.projectId);
+      if (picked !== null) {
+        resolvedAssignee = picked;
+        autoAssigned = true;
       }
     }
 
@@ -75,7 +90,7 @@ export class TicketsService {
       priority: dto.priority,
       type: dto.type,
       projectId: dto.projectId,
-      assigneeId: dto.assigneeId ?? null,
+      assigneeId: resolvedAssignee,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
       isOverdue: false,
     });
@@ -98,6 +113,17 @@ export class TicketsService {
             assigneeId: saved.assigneeId,
           },
         },
+      });
+    }
+    if (autoAssigned) {
+      // SYSTEM-actor audit: always emitted on actual auto-assignment, no ctx required.
+      await this.audit.record({
+        action: AuditAction.AUTO_ASSIGN,
+        entityType: AuditEntityType.TICKET,
+        entityId: saved.id,
+        actor: AuditActor.SYSTEM,
+        performedBy: null,
+        payload: { assigneeId: saved.assigneeId },
       });
     }
     return saved;

@@ -16,6 +16,7 @@ import { Project } from '../projects/entities/project.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
+import { WorkloadService } from '../workload/workload.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
 import { TicketsService } from './tickets.service';
@@ -38,6 +39,7 @@ describe('TicketsService', () => {
   let projects: jest.Mocked<Pick<ProjectsService, 'findOne'>>;
   let users: jest.Mocked<Pick<UsersService, 'findOne'>>;
   let audit: { record: jest.Mock };
+  let workload: { pickAutoAssignee: jest.Mock };
 
   const validDto: CreateTicketDto = {
     title: 'Fix login bug',
@@ -56,6 +58,7 @@ describe('TicketsService', () => {
     projects = { findOne: jest.fn() };
     users = { findOne: jest.fn() };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
+    workload = { pickAutoAssignee: jest.fn().mockResolvedValue(null) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -65,6 +68,7 @@ describe('TicketsService', () => {
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
         { provide: AuditLogService, useValue: audit },
+        { provide: WorkloadService, useValue: workload },
       ],
     }).compile();
 
@@ -237,6 +241,64 @@ describe('TicketsService', () => {
     it('throws NotFoundException when nothing was deleted', async () => {
       repo.softDelete.mockResolvedValueOnce({ affected: 0, raw: {} } as never);
       await expect(service.softDelete(1)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('auto-assignment (Phase 13)', () => {
+    it('calls workload.pickAutoAssignee and sets assigneeId when omitted', async () => {
+      projects.findOne.mockResolvedValueOnce({ id: 1 } as Project);
+      workload.pickAutoAssignee.mockResolvedValueOnce(42);
+      repo.save.mockImplementation(async (t) => ({
+        ...(t as Ticket),
+        id: 7,
+        version: 1,
+      }));
+
+      const result = await service.create(validDto);
+
+      expect(workload.pickAutoAssignee).toHaveBeenCalledWith(1);
+      expect(result.assigneeId).toBe(42);
+    });
+
+    it('emits AUTO_ASSIGN audit when auto-assigned, regardless of ctx', async () => {
+      projects.findOne.mockResolvedValueOnce({ id: 1 } as Project);
+      workload.pickAutoAssignee.mockResolvedValueOnce(42);
+      repo.save.mockImplementation(async (t) => ({
+        ...(t as Ticket),
+        id: 7,
+        version: 1,
+      }));
+
+      await service.create(validDto); // no ctx
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'AUTO_ASSIGN',
+          entityType: 'TICKET',
+          entityId: 7,
+          actor: 'SYSTEM',
+          performedBy: null,
+          payload: { assigneeId: 42 },
+        }),
+      );
+    });
+
+    it('leaves assigneeId null and skips AUTO_ASSIGN when no devs linked', async () => {
+      projects.findOne.mockResolvedValueOnce({ id: 1 } as Project);
+      workload.pickAutoAssignee.mockResolvedValueOnce(null);
+      repo.save.mockImplementation(async (t) => ({
+        ...(t as Ticket),
+        id: 7,
+        version: 1,
+      }));
+
+      const result = await service.create(validDto);
+
+      expect(result.assigneeId).toBeNull();
+      const autoAssignCalls = audit.record.mock.calls.filter(
+        ([entry]) => entry.action === 'AUTO_ASSIGN',
+      );
+      expect(autoAssignCalls).toHaveLength(0);
     });
   });
 
