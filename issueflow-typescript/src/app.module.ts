@@ -7,6 +7,8 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { configuration, AppConfig } from './config/configuration';
 import { HealthModule } from './health/health.module';
+import { ProjectsModule } from './projects/projects.module';
+import { TicketsModule } from './tickets/tickets.module';
 import { UsersModule } from './users/users.module';
 
 function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
@@ -45,6 +47,8 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
     HealthModule,
     UsersModule,
     AuthModule,
+    ProjectsModule,
+    TicketsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

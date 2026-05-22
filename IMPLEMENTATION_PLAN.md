@@ -12,7 +12,7 @@
 | Auth | JWT, stateless, short expiry; bcrypt password hashes |
 | Password field | Extends `POST /users` body (not in original README, documented in `run.md`) |
 | Concurrent-edit prevention | Optimistic locking — TypeORM `@VersionColumn` on Ticket & Comment, exposed via HTTP `ETag` / `If-Match`, `409` on conflict |
-| Project membership | Explicit `project_members` join table (best practice; required for auto-assignment) |
+| Project membership | Derived from `projects.owner_id` ∪ `tickets.assignee_id` — no separate table. *(Revised 2026-05-22 from explicit `project_members` table to derived: equally spec-compliant since the spec defines no membership API; the explicit table would be a leaky abstraction maintained only by side-effects.)* |
 | Audit log | Synchronous `auditService.record(...)` calls inside service methods (captures both USER and SYSTEM actors) |
 | Audit log filter | One field at a time (`entityType` / `entityId` / `action` / `actor`) |
 | Soft delete | TypeORM `@DeleteDateColumn` on Project & Ticket |
@@ -48,7 +48,6 @@ src/<feature>/
 |---|---|
 | `User` | `id, username (unique), email (unique), fullName, role, passwordHash, createdAt` |
 | `Project` | `id, name, description, ownerId`, `@DeleteDateColumn` |
-| `ProjectMember` | `projectId, userId` (composite PK) |
 | `Ticket` | `id, title, description, status, priority, type, projectId, assigneeId?, dueDate?, isOverdue`, `@VersionColumn`, `@DeleteDateColumn` |
 | `Comment` | `id, ticketId, authorId, content`, `@VersionColumn` |
 | `TicketDependency` | `ticketId, blockerId` (composite PK) |
@@ -71,7 +70,7 @@ TypeORM `synchronize: true` for assignment scope (no migrations).
 | 0 | **Foundation** — upgrade to Nest 11, add deps, ConfigModule, TypeORM wiring, global pipes/filters, `.env.example`, health route | Everything else depends on it |
 | 1 | **Users CRUD** | Identity precedes auth |
 | 2 | **Authentication** (JWT login/logout/me, guards, RolesGuard) | Gates all subsequent endpoints |
-| 3 | **Projects CRUD** (+ soft delete entity flag, ProjectMember table) | Required by Tickets |
+| 3 | **Projects CRUD** (+ soft delete via `@DeleteDateColumn`) | Required by Tickets |
 | 4 | **Tickets CRUD** (lifecycle, optimistic lock, DONE-lock, soft delete) | Core domain; required by everything after |
 | 5 | **Comments CRUD** (optimistic lock) | Final core domain piece |
 | 6 | **Audit log** | Built *before* later features so they emit audit events from day one |
@@ -81,7 +80,7 @@ TypeORM `synchronize: true` for assignment scope (no migrations).
 | 10 | **Soft-delete admin endpoints** (`/tickets/deleted`, `/projects/deleted`, `/restore`) | Entities already soft-delete from step 3/4; this just exposes ADMIN endpoints |
 | 11 | **@Mentions** | Touches Comment + User only |
 | 12 | **Auto-Escalation scheduler** (`@nestjs/schedule`) | Background job; independent |
-| 13 | **Auto-Assignment** (+ `/projects/:id/workload`) | Last — depends on ProjectMember (3), Tickets (4), Audit log (6) all being complete |
+| 13 | **Auto-Assignment** (+ `/projects/:id/workload`) | Last — depends on Projects (3), Tickets (4), Audit log (6) all being complete. Membership derived as `projects.owner_id ∪ DISTINCT tickets.assignee_id`. |
 | 14 | **Quality & docs** — tests fleshed out, `run.md`, `prompts.md`, `CLAUDE.md` instruction file, `simplify` + `security-review` pass | End-of-line polish |
 
 Per-feature detailed plans (entities, DTOs, endpoints, edge cases, tests) are produced one phase at a time, before code is written for that phase.
