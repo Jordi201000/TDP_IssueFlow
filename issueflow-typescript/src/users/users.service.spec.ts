@@ -3,6 +3,10 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { QueryFailedError, Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/enums/audit-action.enum';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
+import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { Role } from '../common/enums/role.enum';
 import { CreateUserDto } from './dto/create-user.dto';
 import { User } from './entities/user.entity';
@@ -27,6 +31,7 @@ function makeUniqueError(driver: { code: string; detail?: string; message?: stri
 describe('UsersService', () => {
   let service: UsersService;
   let repo: jest.Mocked<Repository<User>>;
+  let audit: { record: jest.Mock };
 
   const validDto: CreateUserDto = {
     username: 'jdoe',
@@ -38,10 +43,12 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     repo = makeRepo();
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
     const module = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getRepositoryToken(User), useValue: repo },
+        { provide: AuditLogService, useValue: audit },
       ],
     }).compile();
     service = module.get(UsersService);
@@ -145,6 +152,31 @@ describe('UsersService', () => {
     it('resolves when one row deleted', async () => {
       repo.delete.mockResolvedValueOnce({ affected: 1, raw: {} });
       await expect(service.remove(1)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('audit emission (spot-check)', () => {
+    it('create(dto, ctx) calls audit.record with USER/CREATE for the new user id', async () => {
+      repo.save.mockImplementation(async (u) => ({ ...(u as User), id: 42 }));
+      await service.create(validDto, {
+        actor: AuditActor.USER,
+        performedBy: 7,
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: AuditAction.CREATE,
+          entityType: AuditEntityType.USER,
+          entityId: 42,
+          actor: AuditActor.USER,
+          performedBy: 7,
+        }),
+      );
+    });
+
+    it('create(dto) without ctx does NOT call audit.record', async () => {
+      repo.save.mockImplementation(async (u) => ({ ...(u as User), id: 1 }));
+      await service.create(validDto);
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

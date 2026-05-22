@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/enums/audit-action.enum';
+import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
+import { AuditContext } from '../audit-log/interfaces/audit-context.interface';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
 import { TicketStatus, isForwardOrSame } from '../common/enums/ticket-status.enum';
 import { ProjectsService } from '../projects/projects.service';
@@ -21,9 +25,10 @@ export class TicketsService {
     private readonly tickets: Repository<Ticket>,
     private readonly projects: ProjectsService,
     private readonly users: UsersService,
+    private readonly audit: AuditLogService,
   ) {}
 
-  async create(dto: CreateTicketDto): Promise<Ticket> {
+  async create(dto: CreateTicketDto, ctx?: AuditContext): Promise<Ticket> {
     const project = await this.projects.findOne(dto.projectId).catch(() => null);
     if (!project) {
       throw new BadRequestException(`Project ${dto.projectId} does not exist`);
@@ -49,7 +54,28 @@ export class TicketsService {
       dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
       isOverdue: false,
     });
-    return this.tickets.save(ticket);
+    const saved = await this.tickets.save(ticket);
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.CREATE,
+        entityType: AuditEntityType.TICKET,
+        entityId: saved.id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+        payload: {
+          snapshot: {
+            id: saved.id,
+            title: saved.title,
+            status: saved.status,
+            priority: saved.priority,
+            type: saved.type,
+            projectId: saved.projectId,
+            assigneeId: saved.assigneeId,
+          },
+        },
+      });
+    }
+    return saved;
   }
 
   findAllByProject(projectId: number): Promise<Ticket[]> {
@@ -68,6 +94,7 @@ export class TicketsService {
     id: number,
     dto: UpdateTicketDto,
     expectedVersion: number | undefined,
+    ctx?: AuditContext,
   ): Promise<Ticket> {
     if (expectedVersion === undefined) {
       throw new PreconditionRequiredException('If-Match header required');
@@ -116,13 +143,33 @@ export class TicketsService {
       ticket.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
     }
 
-    return this.tickets.save(ticket);
+    const saved = await this.tickets.save(ticket);
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.UPDATE,
+        entityType: AuditEntityType.TICKET,
+        entityId: saved.id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+        payload: { changes: dto, version: saved.version },
+      });
+    }
+    return saved;
   }
 
-  async softDelete(id: number): Promise<void> {
+  async softDelete(id: number, ctx?: AuditContext): Promise<void> {
     const result = await this.tickets.softDelete(id);
     if (!result.affected) {
       throw new NotFoundException(`Ticket ${id} not found`);
+    }
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.DELETE,
+        entityType: AuditEntityType.TICKET,
+        entityId: id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+      });
     }
   }
 }

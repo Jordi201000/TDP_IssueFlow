@@ -6,6 +6,7 @@ import {
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
 import { TicketPriority } from '../common/enums/ticket-priority.enum';
 import { TicketStatus } from '../common/enums/ticket-status.enum';
@@ -54,6 +55,7 @@ describe('TicketsService', () => {
         { provide: getRepositoryToken(Ticket), useValue: repo },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
+        { provide: AuditLogService, useValue: { record: jest.fn() } },
       ],
     }).compile();
 
@@ -134,7 +136,6 @@ describe('TicketsService', () => {
       }) as Ticket;
 
     it('throws 428 when expectedVersion is undefined', async () => {
-      repo.findOne.mockResolvedValueOnce(ticket());
       await expect(
         service.update(1, { title: 'new' }, undefined),
       ).rejects.toThrow(PreconditionRequiredException);

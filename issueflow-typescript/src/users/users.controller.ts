@@ -9,6 +9,9 @@ import {
   ParseIntPipe,
   Post,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -33,7 +36,8 @@ export class UsersController {
   @Post()
   @HttpCode(HttpStatus.OK)
   create(@Body() dto: CreateUserDto): Promise<User> {
-    return this.users.create(dto);
+    // Public registration: no token, performedBy is null.
+    return this.users.create(dto, { actor: AuditActor.USER, performedBy: null });
   }
 
   @Post('update/:userId')
@@ -41,13 +45,23 @@ export class UsersController {
   async update(
     @Param('userId', ParseIntPipe) userId: number,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<void> {
-    await this.users.update(userId, dto);
+    await this.users.update(userId, dto, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 
   @Delete(':userId')
   @HttpCode(HttpStatus.OK)
-  async remove(@Param('userId', ParseIntPipe) userId: number): Promise<void> {
-    await this.users.remove(userId);
+  async remove(
+    @Param('userId', ParseIntPipe) userId: number,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<void> {
+    await this.users.remove(userId, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 }

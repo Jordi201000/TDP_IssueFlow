@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { Role } from '../common/enums/role.enum';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
@@ -39,6 +40,7 @@ describe('ProjectsService', () => {
         ProjectsService,
         { provide: getRepositoryToken(Project), useValue: repo },
         { provide: UsersService, useValue: users },
+        { provide: AuditLogService, useValue: { record: jest.fn() } },
       ],
     }).compile();
     service = module.get(ProjectsService);

@@ -6,6 +6,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { QueryFailedError, Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/enums/audit-action.enum';
+import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
+import { AuditContext } from '../audit-log/interfaces/audit-context.interface';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
@@ -17,9 +21,10 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly users: Repository<User>,
+    private readonly audit: AuditLogService,
   ) {}
 
-  async create(dto: CreateUserDto): Promise<User> {
+  async create(dto: CreateUserDto, ctx?: AuditContext): Promise<User> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = this.users.create({
       username: dto.username,
@@ -29,8 +34,9 @@ export class UsersService {
       passwordHash,
     });
 
+    let saved: User;
     try {
-      return await this.users.save(user);
+      saved = await this.users.save(user);
     } catch (err) {
       const field = this.detectUniqueViolation(err);
       if (field) {
@@ -38,6 +44,26 @@ export class UsersService {
       }
       throw err;
     }
+
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.CREATE,
+        entityType: AuditEntityType.USER,
+        entityId: saved.id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+        payload: {
+          snapshot: {
+            id: saved.id,
+            username: saved.username,
+            email: saved.email,
+            fullName: saved.fullName,
+            role: saved.role,
+          },
+        },
+      });
+    }
+    return saved;
   }
 
   findAll(): Promise<User[]> {
@@ -56,17 +82,42 @@ export class UsersService {
     return user;
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<User> {
+  async update(
+    id: number,
+    dto: UpdateUserDto,
+    ctx?: AuditContext,
+  ): Promise<User> {
     const user = await this.findOne(id);
     if (dto.fullName !== undefined) user.fullName = dto.fullName;
     if (dto.role !== undefined) user.role = dto.role;
-    return this.users.save(user);
+    const saved = await this.users.save(user);
+
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.UPDATE,
+        entityType: AuditEntityType.USER,
+        entityId: saved.id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+        payload: { changes: dto },
+      });
+    }
+    return saved;
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: number, ctx?: AuditContext): Promise<void> {
     const result = await this.users.delete(id);
     if (!result.affected) {
       throw new NotFoundException(`User ${id} not found`);
+    }
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.DELETE,
+        entityType: AuditEntityType.USER,
+        entityId: id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+      });
     }
   }
 

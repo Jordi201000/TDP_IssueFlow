@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { Role } from '../common/enums/role.enum';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
@@ -33,6 +34,7 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: users },
         { provide: JwtService, useValue: jwt },
         { provide: ConfigService, useValue: config },
+        { provide: AuditLogService, useValue: { record: jest.fn() } },
       ],
     }).compile();
 

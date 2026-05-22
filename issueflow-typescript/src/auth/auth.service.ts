@@ -2,6 +2,10 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/enums/audit-action.enum';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
+import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { AppConfig } from '../config/configuration';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
@@ -18,6 +22,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResult> {
@@ -34,6 +39,15 @@ export class AuthService {
       { sub: user.id, username: user.username, role: user.role },
       { expiresIn },
     );
+
+    await this.audit.record({
+      action: AuditAction.LOGIN,
+      entityType: AuditEntityType.USER,
+      entityId: user.id,
+      actor: AuditActor.USER,
+      performedBy: user.id,
+    });
+
     return { accessToken, tokenType: 'Bearer', expiresIn };
   }
 }

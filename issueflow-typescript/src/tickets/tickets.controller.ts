@@ -15,11 +15,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
+import { parseIfMatch } from '../common/helpers/if-match';
+import { EtagInterceptor } from '../common/interceptors/etag.interceptor';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
-import { parseIfMatch } from './helpers/if-match';
-import { EtagInterceptor } from './interceptors/etag.interceptor';
 import { TicketsService } from './tickets.service';
 
 @Controller('tickets')
@@ -43,8 +46,14 @@ export class TicketsController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateTicketDto): Promise<Ticket> {
-    return this.tickets.create(dto);
+  create(
+    @Body() dto: CreateTicketDto,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<Ticket> {
+    return this.tickets.create(dto, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 
   @Patch(':ticketId')
@@ -53,10 +62,14 @@ export class TicketsController {
     @Param('ticketId', ParseIntPipe) ticketId: number,
     @Body() dto: UpdateTicketDto,
     @Headers('if-match') ifMatch: string | undefined,
+    @CurrentUser() me: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     const expectedVersion = parseIfMatch(ifMatch);
-    const updated = await this.tickets.update(ticketId, dto, expectedVersion);
+    const updated = await this.tickets.update(ticketId, dto, expectedVersion, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
     res.setHeader('ETag', `"${updated.version}"`);
   }
 
@@ -64,7 +77,11 @@ export class TicketsController {
   @HttpCode(HttpStatus.OK)
   async remove(
     @Param('ticketId', ParseIntPipe) ticketId: number,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<void> {
-    await this.tickets.softDelete(ticketId);
+    await this.tickets.softDelete(ticketId, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 }

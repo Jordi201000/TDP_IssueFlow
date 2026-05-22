@@ -10,6 +10,9 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { AuditActor } from '../audit-log/enums/audit-actor.enum';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { Project } from './entities/project.entity';
@@ -33,8 +36,14 @@ export class ProjectsController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateProjectDto): Promise<Project> {
-    return this.projects.create(dto);
+  create(
+    @Body() dto: CreateProjectDto,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<Project> {
+    return this.projects.create(dto, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 
   @Patch(':projectId')
@@ -42,15 +51,23 @@ export class ProjectsController {
   async update(
     @Param('projectId', ParseIntPipe) projectId: number,
     @Body() dto: UpdateProjectDto,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<void> {
-    await this.projects.update(projectId, dto);
+    await this.projects.update(projectId, dto, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 
   @Delete(':projectId')
   @HttpCode(HttpStatus.OK)
   async remove(
     @Param('projectId', ParseIntPipe) projectId: number,
+    @CurrentUser() me: AuthenticatedUser,
   ): Promise<void> {
-    await this.projects.softDelete(projectId);
+    await this.projects.softDelete(projectId, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
   }
 }
