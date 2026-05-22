@@ -8,6 +8,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
+import { MentionsService } from '../mentions/mentions.service';
 import { Ticket } from '../tickets/entities/ticket.entity';
 import { TicketsService } from '../tickets/tickets.service';
 import { User } from '../users/entities/user.entity';
@@ -30,11 +31,13 @@ describe('CommentsService', () => {
   let repo: jest.Mocked<Repository<Comment>>;
   let tickets: jest.Mocked<Pick<TicketsService, 'findOne'>>;
   let users: jest.Mocked<Pick<UsersService, 'findOne'>>;
+  let mentions: { persistFor: jest.Mock };
 
   beforeEach(async () => {
     repo = makeRepo();
     tickets = { findOne: jest.fn() };
     users = { findOne: jest.fn() };
+    mentions = { persistFor: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -43,6 +46,7 @@ describe('CommentsService', () => {
         { provide: TicketsService, useValue: tickets },
         { provide: UsersService, useValue: users },
         { provide: AuditLogService, useValue: { record: jest.fn() } },
+        { provide: MentionsService, useValue: mentions },
       ],
     }).compile();
 
@@ -170,6 +174,40 @@ describe('CommentsService', () => {
     it('throws NotFoundException when comment missing', async () => {
       repo.findOne.mockResolvedValueOnce(null);
       await expect(service.remove(1, 99)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('mentions integration (Phase 11)', () => {
+    it('create calls mentions.persistFor with saved id and content', async () => {
+      tickets.findOne.mockResolvedValueOnce({ id: 1 } as Ticket);
+      users.findOne.mockResolvedValueOnce({ id: 2 } as User);
+      repo.save.mockImplementation(async (c) => ({
+        ...(c as Comment),
+        id: 7,
+        version: 1,
+      }));
+
+      await service.create(1, { authorId: 2, content: 'hi @alice' });
+
+      expect(mentions.persistFor).toHaveBeenCalledWith(7, 'hi @alice');
+    });
+
+    it('update calls mentions.persistFor with comment id and new content', async () => {
+      repo.findOne.mockResolvedValueOnce({
+        id: 7,
+        ticketId: 1,
+        authorId: 2,
+        content: 'old',
+        version: 1,
+      } as Comment);
+      repo.save.mockImplementation(async (c) => ({
+        ...(c as Comment),
+        version: 2,
+      }));
+
+      await service.update(1, 7, { content: 'now @bob' }, 1);
+
+      expect(mentions.persistFor).toHaveBeenCalledWith(7, 'now @bob');
     });
   });
 });

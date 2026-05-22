@@ -11,6 +11,7 @@ import { AuditAction } from '../audit-log/enums/audit-action.enum';
 import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { AuditContext } from '../audit-log/interfaces/audit-context.interface';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
+import { MentionsService } from '../mentions/mentions.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { UsersService } from '../users/users.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -25,6 +26,7 @@ export class CommentsService {
     private readonly tickets: TicketsService,
     private readonly users: UsersService,
     private readonly audit: AuditLogService,
+    private readonly mentions: MentionsService,
   ) {}
 
   async create(
@@ -48,6 +50,7 @@ export class CommentsService {
       content: dto.content,
     });
     const saved = await this.comments.save(comment);
+    await this.mentions.persistFor(saved.id, saved.content);
     if (ctx) {
       await this.audit.record({
         action: AuditAction.CREATE,
@@ -105,6 +108,7 @@ export class CommentsService {
     }
     comment.content = dto.content;
     const saved = await this.comments.save(comment);
+    await this.mentions.persistFor(saved.id, saved.content);
     if (ctx) {
       await this.audit.record({
         action: AuditAction.UPDATE,

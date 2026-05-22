@@ -19,31 +19,35 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { AuditActor } from '../audit-log/enums/audit-actor.enum';
 import { parseIfMatch } from '../common/helpers/if-match';
 import { EtagInterceptor } from '../common/interceptors/etag.interceptor';
+import { MentionedUser, MentionsService } from '../mentions/mentions.service';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { Comment } from './entities/comment.entity';
 
 interface CommentResponse extends Comment {
-  mentionedUsers: Array<{ id: number; username: string; fullName: string }>;
-}
-
-function withMentionedUsers(comment: Comment): CommentResponse {
-  // Phase 11 will populate mentionedUsers from the comment_mentions join.
-  return Object.assign(comment, { mentionedUsers: [] });
+  mentionedUsers: MentionedUser[];
 }
 
 @Controller('tickets/:ticketId/comments')
 @UseInterceptors(EtagInterceptor)
 export class CommentsController {
-  constructor(private readonly comments: CommentsService) {}
+  constructor(
+    private readonly comments: CommentsService,
+    private readonly mentions: MentionsService,
+  ) {}
 
   @Get()
   async findAll(
     @Param('ticketId', ParseIntPipe) ticketId: number,
   ): Promise<CommentResponse[]> {
     const list = await this.comments.findAllByTicket(ticketId);
-    return list.map(withMentionedUsers);
+    const byCommentId = await this.mentions.getMentionedUsersBatch(
+      list.map((c) => c.id),
+    );
+    return list.map((c) =>
+      Object.assign(c, { mentionedUsers: byCommentId[c.id] ?? [] }),
+    );
   }
 
   @Post()
@@ -57,7 +61,10 @@ export class CommentsController {
       actor: AuditActor.USER,
       performedBy: me.userId,
     });
-    return withMentionedUsers(comment);
+    const mentionedUsers = await this.mentions.getMentionedUsersFor(
+      comment.id,
+    );
+    return Object.assign(comment, { mentionedUsers });
   }
 
   @Patch(':commentId')

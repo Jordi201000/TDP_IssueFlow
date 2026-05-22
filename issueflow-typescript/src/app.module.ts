@@ -10,6 +10,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { CommentsModule } from './comments/comments.module';
 import { configuration, AppConfig } from './config/configuration';
 import { DependenciesModule } from './dependencies/dependencies.module';
+import { MentionsModule } from './mentions/mentions.module';
 import { HealthModule } from './health/health.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TicketsModule } from './tickets/tickets.module';
@@ -57,6 +58,7 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
     AuditLogModule,
     DependenciesModule,
     AttachmentsModule,
+    MentionsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
