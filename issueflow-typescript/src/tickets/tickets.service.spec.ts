@@ -240,6 +240,35 @@ describe('TicketsService', () => {
     });
   });
 
+  describe('manual priority change resets isOverdue (Phase 12)', () => {
+    it('clears isOverdue when dto.priority is provided', async () => {
+      const existing = {
+        id: 1,
+        title: 't',
+        description: 'd',
+        status: TicketStatus.IN_PROGRESS,
+        priority: TicketPriority.CRITICAL,
+        type: TicketType.BUG,
+        projectId: 1,
+        assigneeId: null,
+        dueDate: null,
+        isOverdue: true,
+        version: 1,
+      } as Ticket;
+      repo.findOne.mockResolvedValueOnce(existing);
+      repo.save.mockImplementation(async (t) => t as Ticket);
+
+      const result = await service.update(
+        1,
+        { priority: TicketPriority.HIGH },
+        1,
+      );
+
+      expect(result.priority).toBe(TicketPriority.HIGH);
+      expect(result.isOverdue).toBe(false);
+    });
+  });
+
   describe('DONE-blocker integration (Phase 7)', () => {
     function ticketWithBlockers() {
       return {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
@@ -10,6 +11,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { CommentsModule } from './comments/comments.module';
 import { configuration, AppConfig } from './config/configuration';
 import { DependenciesModule } from './dependencies/dependencies.module';
+import { EscalationModule } from './escalation/escalation.module';
 import { MentionsModule } from './mentions/mentions.module';
 import { HealthModule } from './health/health.module';
 import { ProjectsModule } from './projects/projects.module';
@@ -45,6 +47,7 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: buildTypeOrmOptions,
@@ -59,6 +62,7 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
     DependenciesModule,
     AttachmentsModule,
     MentionsModule,
+    EscalationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

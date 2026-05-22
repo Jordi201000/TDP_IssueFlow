@@ -169,7 +169,11 @@ export class TicketsService {
     if (dto.title !== undefined) ticket.title = dto.title;
     if (dto.description !== undefined) ticket.description = dto.description;
     if (dto.status !== undefined) ticket.status = dto.status;
-    if (dto.priority !== undefined) ticket.priority = dto.priority;
+    if (dto.priority !== undefined) {
+      ticket.priority = dto.priority;
+      // Spec §3.7: manual priority change resets the auto-escalation state.
+      ticket.isOverdue = false;
+    }
     if (dto.assigneeId !== undefined) ticket.assigneeId = dto.assigneeId;
     if (dto.dueDate !== undefined) {
       ticket.dueDate = dto.dueDate ? new Date(dto.dueDate) : null;
