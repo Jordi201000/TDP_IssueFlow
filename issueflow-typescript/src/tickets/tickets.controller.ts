@@ -22,6 +22,8 @@ import { memoryStorage } from 'multer';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { AuditActor } from '../audit-log/enums/audit-actor.enum';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/enums/role.enum';
 import { parseIfMatch } from '../common/helpers/if-match';
 import { EtagInterceptor } from '../common/interceptors/etag.interceptor';
 import { ImportSummary } from './csv/ticket-csv';
@@ -50,6 +52,14 @@ export class TicketsController {
       `attachment; filename="tickets-project-${projectId}.csv"`,
     );
     return csv;
+  }
+
+  @Get('deleted')
+  @Roles(Role.ADMIN)
+  findDeleted(
+    @Query('projectId', ParseIntPipe) projectId: number,
+  ): Promise<Ticket[]> {
+    return this.tickets.findDeletedByProject(projectId);
   }
 
   @Post('import')
@@ -130,6 +140,19 @@ export class TicketsController {
     @CurrentUser() me: AuthenticatedUser,
   ): Promise<void> {
     await this.tickets.softDelete(ticketId, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
+  }
+
+  @Post(':ticketId/restore')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async restore(
+    @Param('ticketId', ParseIntPipe) ticketId: number,
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<void> {
+    await this.tickets.restore(ticketId, {
       actor: AuditActor.USER,
       performedBy: me.userId,
     });

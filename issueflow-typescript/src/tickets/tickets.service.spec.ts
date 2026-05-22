@@ -27,6 +27,7 @@ function makeRepo(): jest.Mocked<Repository<Ticket>> {
     find: jest.fn(),
     findOne: jest.fn(),
     softDelete: jest.fn(),
+    restore: jest.fn(),
   } as unknown as jest.Mocked<Repository<Ticket>>;
 }
 
@@ -36,6 +37,7 @@ describe('TicketsService', () => {
   let depsRepo: jest.Mocked<Repository<TicketDependency>>;
   let projects: jest.Mocked<Pick<ProjectsService, 'findOne'>>;
   let users: jest.Mocked<Pick<UsersService, 'findOne'>>;
+  let audit: { record: jest.Mock };
 
   const validDto: CreateTicketDto = {
     title: 'Fix login bug',
@@ -53,6 +55,7 @@ describe('TicketsService', () => {
     } as unknown as jest.Mocked<Repository<TicketDependency>>;
     projects = { findOne: jest.fn() };
     users = { findOne: jest.fn() };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -61,7 +64,7 @@ describe('TicketsService', () => {
         { provide: getRepositoryToken(TicketDependency), useValue: depsRepo },
         { provide: ProjectsService, useValue: projects },
         { provide: UsersService, useValue: users },
-        { provide: AuditLogService, useValue: { record: jest.fn() } },
+        { provide: AuditLogService, useValue: audit },
       ],
     }).compile();
 
@@ -336,6 +339,42 @@ describe('TicketsService', () => {
       expect(result.errors).toHaveLength(2);
       expect(result.errors[0].row).toBe(3);
       expect(result.errors[1].row).toBe(4);
+    });
+  });
+
+  describe('findDeletedByProject / restore (Phase 10)', () => {
+    it('findDeletedByProject filters by projectId with withDeleted', async () => {
+      const list = [{ id: 1, projectId: 5 } as Ticket];
+      repo.find.mockResolvedValueOnce(list);
+      await expect(service.findDeletedByProject(5)).resolves.toBe(list);
+      expect(repo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ withDeleted: true }),
+      );
+    });
+
+    it('restore calls repo.restore and emits a RESTORE audit row when ctx is supplied', async () => {
+      repo.restore.mockResolvedValueOnce({ affected: 1, raw: {} } as never);
+      await service.restore(7, { actor: 'USER' as never, performedBy: 99 });
+      expect(repo.restore).toHaveBeenCalledWith(7);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'RESTORE',
+          entityType: 'TICKET',
+          entityId: 7,
+          performedBy: 99,
+        }),
+      );
+    });
+
+    it('restore throws NotFoundException on affected:0', async () => {
+      repo.restore.mockResolvedValueOnce({ affected: 0, raw: {} } as never);
+      await expect(service.restore(99)).rejects.toThrow(NotFoundException);
+    });
+
+    it('restore skips audit when ctx omitted', async () => {
+      repo.restore.mockResolvedValueOnce({ affected: 1, raw: {} } as never);
+      await service.restore(7);
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

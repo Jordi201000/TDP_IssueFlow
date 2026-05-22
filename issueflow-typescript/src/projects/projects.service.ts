@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/enums/audit-action.enum';
 import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
@@ -98,6 +98,29 @@ export class ProjectsService {
     if (ctx) {
       await this.audit.record({
         action: AuditAction.DELETE,
+        entityType: AuditEntityType.PROJECT,
+        entityId: id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+      });
+    }
+  }
+
+  findDeleted(): Promise<Project[]> {
+    return this.projects.find({
+      where: { deletedAt: Not(IsNull()) },
+      withDeleted: true,
+    });
+  }
+
+  async restore(id: number, ctx?: AuditContext): Promise<void> {
+    const result = await this.projects.restore(id);
+    if (!result.affected) {
+      throw new NotFoundException(`Soft-deleted project ${id} not found`);
+    }
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.RESTORE,
         entityType: AuditEntityType.PROJECT,
         entityId: id,
         actor: ctx.actor,

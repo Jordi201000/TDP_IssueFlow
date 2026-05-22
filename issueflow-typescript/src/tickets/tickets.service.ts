@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { In, Not, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/enums/audit-action.enum';
 import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
@@ -254,6 +254,29 @@ export class TicketsService {
     if (ctx) {
       await this.audit.record({
         action: AuditAction.DELETE,
+        entityType: AuditEntityType.TICKET,
+        entityId: id,
+        actor: ctx.actor,
+        performedBy: ctx.performedBy,
+      });
+    }
+  }
+
+  findDeletedByProject(projectId: number): Promise<Ticket[]> {
+    return this.tickets.find({
+      where: { projectId, deletedAt: Not(IsNull()) },
+      withDeleted: true,
+    });
+  }
+
+  async restore(id: number, ctx?: AuditContext): Promise<void> {
+    const result = await this.tickets.restore(id);
+    if (!result.affected) {
+      throw new NotFoundException(`Soft-deleted ticket ${id} not found`);
+    }
+    if (ctx) {
+      await this.audit.record({
+        action: AuditAction.RESTORE,
         entityType: AuditEntityType.TICKET,
         entityId: id,
         actor: ctx.actor,
