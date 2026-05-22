@@ -287,4 +287,55 @@ describe('TicketsService', () => {
       expect(result.status).toBe(TicketStatus.DONE);
     });
   });
+
+  describe('CSV export/import (Phase 9)', () => {
+    it('exportProject returns CSV with the README header', async () => {
+      projects.findOne.mockResolvedValueOnce({ id: 1 } as Project);
+      repo.find.mockResolvedValueOnce([]);
+      const csv = await service.exportProject(1);
+      expect(csv.split('\n')[0]).toContain(
+        'id,title,description,status,priority,type,assigneeId',
+      );
+    });
+
+    it('importProject propagates 404 when project missing', async () => {
+      projects.findOne.mockRejectedValueOnce(new NotFoundException());
+      await expect(
+        service.importProject(
+          99,
+          Buffer.from('id,title,description,status,priority,type,assigneeId\n'),
+          { actor: 'USER' as never, performedBy: 1 },
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('importProject counts created vs failed for a mixed payload', async () => {
+      projects.findOne.mockResolvedValue({ id: 1 } as Project);
+      // create() also calls projects.findOne under the hood — keep it resolving
+      repo.save.mockImplementation(async (t) => ({
+        ...(t as Ticket),
+        id: 99,
+        version: 1,
+      }));
+
+      const csv = [
+        'id,title,description,status,priority,type,assigneeId',
+        ',Good,desc,TODO,HIGH,BUG,',
+        ',,desc,TODO,HIGH,BUG,',         // invalid: empty title
+        ',Bad,desc,WAITING,HIGH,BUG,',   // invalid: enum
+      ].join('\n');
+
+      const result = await service.importProject(
+        1,
+        Buffer.from(csv),
+        { actor: 'USER' as never, performedBy: 1 },
+      );
+
+      expect(result.created).toBe(1);
+      expect(result.failed).toBe(2);
+      expect(result.errors).toHaveLength(2);
+      expect(result.errors[0].row).toBe(3);
+      expect(result.errors[1].row).toBe(4);
+    });
+  });
 });

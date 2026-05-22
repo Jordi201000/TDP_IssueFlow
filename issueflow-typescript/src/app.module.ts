@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -55,6 +56,7 @@ function buildTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
     CommentsModule,
     AuditLogModule,
     DependenciesModule,
+    AttachmentsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

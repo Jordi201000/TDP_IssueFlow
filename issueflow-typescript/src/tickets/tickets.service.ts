@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { In, Not, Repository } from 'typeorm';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/enums/audit-action.enum';
@@ -12,6 +14,11 @@ import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { AuditContext } from '../audit-log/interfaces/audit-context.interface';
 import { PreconditionRequiredException } from '../common/exceptions/precondition-required.exception';
 import { TicketStatus, isForwardOrSame } from '../common/enums/ticket-status.enum';
+import {
+  ImportSummary,
+  parseTicketCsv,
+  serializeTicketsToCsv,
+} from './csv/ticket-csv';
 import { TicketDependency } from '../dependencies/entities/ticket-dependency.entity';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
@@ -180,6 +187,63 @@ export class TicketsService {
       });
     }
     return saved;
+  }
+
+  async exportProject(projectId: number): Promise<string> {
+    await this.projects.findOne(projectId); // 404 if missing/soft-deleted
+    const tickets = await this.findAllByProject(projectId);
+    return serializeTicketsToCsv(tickets);
+  }
+
+  async importProject(
+    projectId: number,
+    buffer: Buffer,
+    ctx: AuditContext,
+  ): Promise<ImportSummary> {
+    await this.projects.findOne(projectId); // 404 if missing/soft-deleted
+
+    let rows;
+    try {
+      rows = parseTicketCsv(buffer);
+    } catch (err) {
+      throw new BadRequestException(`Malformed CSV: ${(err as Error).message}`);
+    }
+
+    const summary: ImportSummary = { created: 0, failed: 0, errors: [] };
+
+    for (const { row, data } of rows) {
+      const dto = plainToInstance(CreateTicketDto, {
+        title: data.title,
+        description: data.description,
+        status: data.status,
+        priority: data.priority,
+        type: data.type,
+        projectId,
+        assigneeId: data.assigneeId ? Number(data.assigneeId) : undefined,
+      });
+
+      const validationErrors = await validate(dto);
+      if (validationErrors.length > 0) {
+        summary.failed++;
+        summary.errors.push({
+          row,
+          message: validationErrors
+            .flatMap((e) => Object.values(e.constraints ?? {}))
+            .join('; '),
+        });
+        continue;
+      }
+
+      try {
+        await this.create(dto, ctx);
+        summary.created++;
+      } catch (err) {
+        summary.failed++;
+        summary.errors.push({ row, message: (err as Error).message });
+      }
+    }
+
+    return summary;
   }
 
   async softDelete(id: number, ctx?: AuditContext): Promise<void> {

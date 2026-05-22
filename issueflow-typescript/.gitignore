@@ -46,6 +46,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# uploaded attachments (Phase 8)
+/uploads
+
 # Runtime data
 pids
 *.pid

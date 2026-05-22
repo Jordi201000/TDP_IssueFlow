@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,14 +13,18 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { memoryStorage } from 'multer';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { AuditActor } from '../audit-log/enums/audit-actor.enum';
 import { parseIfMatch } from '../common/helpers/if-match';
 import { EtagInterceptor } from '../common/interceptors/etag.interceptor';
+import { ImportSummary } from './csv/ticket-csv';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto } from './dto/update-ticket.dto';
 import { Ticket } from './entities/ticket.entity';
@@ -29,6 +34,51 @@ import { TicketsService } from './tickets.service';
 @UseInterceptors(EtagInterceptor)
 export class TicketsController {
   constructor(private readonly tickets: TicketsService) {}
+
+  // NOTE: literal-path GETs/POSTs declared BEFORE parametric ':ticketId'
+  // routes to keep Express's order-based router from treating "export" /
+  // "import" as a ticketId.
+  @Get('export')
+  async exportCsv(
+    @Query('projectId', ParseIntPipe) projectId: number,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    const csv = await this.tickets.exportProject(projectId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="tickets-project-${projectId}.csv"`,
+    );
+    return csv;
+  }
+
+  @Post('import')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async importCsv(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: { projectId?: string },
+    @CurrentUser() me: AuthenticatedUser,
+  ): Promise<ImportSummary> {
+    if (!file) {
+      throw new BadRequestException('Multipart "file" field is required');
+    }
+    const projectId = Number(body.projectId);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      throw new BadRequestException(
+        'projectId form field is required and must be a positive integer',
+      );
+    }
+    return this.tickets.importProject(projectId, file.buffer, {
+      actor: AuditActor.USER,
+      performedBy: me.userId,
+    });
+  }
 
   @Get()
   findAllByProject(
