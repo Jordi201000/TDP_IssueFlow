@@ -30,9 +30,8 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  logout(): void {
-    // Stateless JWT per locked decision: client discards the token,
-    // server has no deny-list. Token remains valid until exp.
+  async logout(@CurrentUser() user: AuthenticatedUser): Promise<void> {
+    await this.auth.logout(user);
   }
 
   @Get('me')

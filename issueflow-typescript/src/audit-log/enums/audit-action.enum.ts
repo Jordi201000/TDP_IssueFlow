@@ -4,6 +4,7 @@ export enum AuditAction {
   DELETE = 'DELETE',
   RESTORE = 'RESTORE',
   LOGIN = 'LOGIN',
+  LOGOUT = 'LOGOUT',
   AUTO_ASSIGN = 'AUTO_ASSIGN',
   AUTO_ESCALATE = 'AUTO_ESCALATE',
 }

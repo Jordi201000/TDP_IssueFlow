@@ -4,4 +4,6 @@ export interface AuthenticatedUser {
   userId: number;
   username: string;
   role: Role;
+  jti: string;
+  exp: number;
 }

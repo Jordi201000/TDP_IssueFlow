@@ -106,7 +106,7 @@ A full manual smoke-test runbook lives in [TESTING.md](TESTING.md). It walks thr
 
 - **`synchronize: true`** for TypeORM is the assignment-scope default — schema is rebuilt from entity decorators on every boot. **Not safe for production**; migrations would replace this in a real deployment.
 - **`uploads/` is gitignored** — attachment files land at `uploads/<ticketId>/<uuid>-<filename>` on disk. A fresh clone has no upload history; existing DB rows would have dangling `storagePath`.
-- **Stateless JWT** with short expiry — `POST /auth/logout` is a no-op (no server-side deny-list). Clients should drop the token. The token remains technically valid until `JWT_TTL_SECONDS` elapses.
+- **JWT logout invalidation** uses an in-memory deny-list keyed by token `jti` until the token expires. This satisfies the assignment contract for a single app instance; a real multi-instance deployment would move the deny-list to shared storage such as Redis.
 - **Auto-escalation cron runs every 30 seconds** (`*/30 * * * * *`). Dev-friendly cadence; production would be 5+ minutes.
 - **Audit log has no pagination** on `GET /audit-logs`. Long-running systems would accumulate; acceptable for assignment scope.
 - **Foreign-key constraints are not enforced at the DB level** for `ownerId`, `assigneeId`, `authorId`, `projectId`, etc. — validated at write time in services. Cross-dialect simplicity over strict relational integrity.

@@ -8,11 +8,13 @@ import { Role } from '../common/enums/role.enum';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { RevokedTokenService } from './revoked-token.service';
 
 describe('AuthService', () => {
   let service: AuthService;
   let users: jest.Mocked<Pick<UsersService, 'findByUsername'>>;
   let jwt: jest.Mocked<Pick<JwtService, 'signAsync'>>;
+  let revokedTokens: jest.Mocked<Pick<RevokedTokenService, 'revoke'>>;
 
   const password = 'sup3rSecret';
   let passwordHash: string;
@@ -24,6 +26,7 @@ describe('AuthService', () => {
   beforeEach(async () => {
     users = { findByUsername: jest.fn() };
     jwt = { signAsync: jest.fn().mockResolvedValue('signed.jwt.token') };
+    revokedTokens = { revoke: jest.fn() };
     const config = {
       get: jest.fn().mockReturnValue({ secret: 's', ttlSeconds: 3600 }),
     };
@@ -35,6 +38,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: jwt },
         { provide: ConfigService, useValue: config },
         { provide: AuditLogService, useValue: { record: jest.fn() } },
+        { provide: RevokedTokenService, useValue: revokedTokens },
       ],
     }).compile();
 
@@ -57,9 +61,26 @@ describe('AuthService', () => {
       expiresIn: 3600,
     });
     expect(jwt.signAsync).toHaveBeenCalledWith(
-      { sub: 7, username: 'jdoe', role: Role.DEVELOPER },
+      {
+        sub: 7,
+        username: 'jdoe',
+        role: Role.DEVELOPER,
+        jti: expect.any(String),
+      },
       { expiresIn: 3600 },
     );
+  });
+
+  it('revokes the presented token on logout', async () => {
+    await service.logout({
+      userId: 7,
+      username: 'jdoe',
+      role: Role.DEVELOPER,
+      jti: 'token-id',
+      exp: 12345,
+    });
+
+    expect(revokedTokens.revoke).toHaveBeenCalledWith('token-id', 12345);
   });
 
   it('throws UnauthorizedException with the same message on missing user', async () => {

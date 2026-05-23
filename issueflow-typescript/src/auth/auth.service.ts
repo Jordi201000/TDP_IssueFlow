@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { AuditAction } from '../audit-log/enums/audit-action.enum';
 import { AuditActor } from '../audit-log/enums/audit-actor.enum';
@@ -9,6 +10,8 @@ import { AuditEntityType } from '../audit-log/enums/audit-entity-type.enum';
 import { AppConfig } from '../config/configuration';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
+import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
+import { RevokedTokenService } from './revoked-token.service';
 
 export interface LoginResult {
   accessToken: string;
@@ -23,6 +26,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditLogService,
+    private readonly revokedTokens: RevokedTokenService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResult> {
@@ -35,8 +39,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     const expiresIn = this.config.get<AppConfig['jwt']>('jwt')!.ttlSeconds;
+    const jti = randomUUID();
     const accessToken = await this.jwt.signAsync(
-      { sub: user.id, username: user.username, role: user.role },
+      { sub: user.id, username: user.username, role: user.role, jti },
       { expiresIn },
     );
 
@@ -49,5 +54,17 @@ export class AuthService {
     });
 
     return { accessToken, tokenType: 'Bearer', expiresIn };
+  }
+
+  async logout(user: AuthenticatedUser): Promise<void> {
+    this.revokedTokens.revoke(user.jti, user.exp);
+
+    await this.audit.record({
+      action: AuditAction.LOGOUT,
+      entityType: AuditEntityType.USER,
+      entityId: user.userId,
+      actor: AuditActor.USER,
+      performedBy: user.userId,
+    });
   }
 }
