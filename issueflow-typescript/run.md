@@ -92,10 +92,15 @@ curl http://localhost:3000/health
 
 ```bash
 npm test                # all unit tests
+npm run test:e2e        # full end-to-end integration tests
 npm run test:cov        # with coverage
 ```
 
-Expected: **221 tests passing across 32 suites** in ~6 seconds.
+Expected unit tests: **224 tests passing across 32 suites**.
+
+Expected e2e:
+- all e2e scenarios passing
+- auth, optimistic locking, CSV, dependencies, attachments, audit logs, mentions, workload, restore flows, and authorization rules validated
 
 Tests use `better-sqlite3` in-memory (configured via `NODE_ENV=test` in `src/app.module.ts`), so they don't touch the Docker Postgres. No setup beyond `npm install` is needed for the test suite.
 
