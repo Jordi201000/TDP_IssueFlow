@@ -65,6 +65,7 @@ describe('App e2e', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.getHttpAdapter().getInstance().set('etag', false);
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -321,6 +322,7 @@ describe('App e2e', () => {
       })
       .expect(200);
     const comment = commentRes.body;
+    expect(comment.version).toBe(1);
     expect(comment.mentionedUsers).toEqual([
       expect.objectContaining({
         id: mentionedUserId,
@@ -341,10 +343,27 @@ describe('App e2e', () => {
         });
       });
 
+    const listedCommentsBeforeUpdate = await request(http)
+      .get(`/tickets/${ticket.id}/comments`)
+      .set('Authorization', auth(adminToken))
+      .expect(200)
+      .expect((res) => {
+        expect(res.headers.etag).toBeUndefined();
+        expect(res.body).toEqual([
+          expect.objectContaining({
+            id: comment.id,
+            version: 1,
+          }),
+        ]);
+      })
+      .then((res) => res.body);
+
+    const commentVersionFromList = listedCommentsBeforeUpdate[0].version;
+
     const updatedCommentRes = await request(http)
       .patch(`/tickets/${ticket.id}/comments/${comment.id}`)
       .set('Authorization', auth(adminToken))
-      .set('If-Match', commentRes.headers.etag)
+      .set('If-Match', `"${commentVersionFromList}"`)
       .send({ content: 'Updated comment' })
       .expect(200);
     expect(updatedCommentRes.headers.etag).toBe('"2"');

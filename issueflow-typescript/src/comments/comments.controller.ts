@@ -23,9 +23,12 @@ import { MentionedUser, MentionsService } from '../mentions/mentions.service';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
-import { Comment } from './entities/comment.entity';
-
-interface CommentResponse extends Comment {
+interface CommentResponse {
+  id: number;
+  ticketId: number;
+  authorId: number;
+  content: string;
+  version: number;
   mentionedUsers: MentionedUser[];
 }
 
@@ -46,7 +49,7 @@ export class CommentsController {
       list.map((c) => c.id),
     );
     return list.map((c) =>
-      Object.assign(c, { mentionedUsers: byCommentId[c.id] ?? [] }),
+      this.toResponse(c, byCommentId[c.id] ?? []),
     );
   }
 
@@ -64,7 +67,7 @@ export class CommentsController {
     const mentionedUsers = await this.mentions.getMentionedUsersFor(
       comment.id,
     );
-    return Object.assign(comment, { mentionedUsers });
+    return this.toResponse(comment, mentionedUsers);
   }
 
   @Patch(':commentId')
@@ -99,5 +102,25 @@ export class CommentsController {
       actor: AuditActor.USER,
       performedBy: me.userId,
     });
+  }
+
+  private toResponse(
+    comment: {
+      id: number;
+      ticketId: number;
+      authorId: number;
+      content: string;
+      version: number;
+    },
+    mentionedUsers: MentionedUser[],
+  ): CommentResponse {
+    return {
+      id: comment.id,
+      ticketId: comment.ticketId,
+      authorId: comment.authorId,
+      content: comment.content,
+      version: comment.version,
+      mentionedUsers,
+    };
   }
 }
