@@ -1,6 +1,7 @@
 # IssueFlow — Setup, Build, Run, Test
 
 Exact, copy-paste steps to get the system running on a fresh clone, with notes on the non-default choices.
+API behavior and endpoint contracts follow the provided `README.md` assignment specification.
 
 ## Prerequisites
 
