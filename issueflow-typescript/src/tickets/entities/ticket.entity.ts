@@ -38,7 +38,7 @@ export class Ticket {
   @Column({ name: 'assignee_id', type: 'int', nullable: true })
   assigneeId: number | null;
 
-  @Column({ name: 'due_date', type: 'timestamp', nullable: true })
+  @Column({ name: 'due_date', nullable: true })
   dueDate: Date | null;
 
   @Column({ name: 'is_overdue', default: false })
