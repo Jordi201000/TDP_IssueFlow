@@ -323,6 +323,7 @@ describe('App e2e', () => {
       .expect(200);
     const comment = commentRes.body;
     expect(comment.version).toBe(1);
+    expect(commentRes.headers.etag).toBe('"1"');
     expect(comment.mentionedUsers).toEqual([
       expect.objectContaining({
         id: mentionedUserId,
@@ -359,6 +360,31 @@ describe('App e2e', () => {
       .then((res) => res.body);
 
     const commentVersionFromList = listedCommentsBeforeUpdate[0].version;
+
+    await request(http)
+      .get(`/tickets/${ticket.id}/comments/${comment.id}`)
+      .set('Authorization', auth(adminToken))
+      .expect(200)
+      .expect((res) => {
+        expect(res.headers.etag).toBe('"1"');
+        expect(res.body).toMatchObject({
+          id: comment.id,
+          version: commentVersionFromList,
+        });
+      });
+
+    await request(http)
+      .patch(`/tickets/${ticket.id}/comments/${comment.id}`)
+      .set('Authorization', auth(adminToken))
+      .send({ content: 'Missing precondition' })
+      .expect(428);
+
+    await request(http)
+      .patch(`/tickets/${ticket.id}/comments/${comment.id}`)
+      .set('Authorization', auth(adminToken))
+      .set('If-Match', '"0"')
+      .send({ content: 'Stale update' })
+      .expect(409);
 
     const updatedCommentRes = await request(http)
       .patch(`/tickets/${ticket.id}/comments/${comment.id}`)

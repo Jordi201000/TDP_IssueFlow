@@ -70,6 +70,18 @@ export class CommentsController {
     return this.toResponse(comment, mentionedUsers);
   }
 
+  @Get(':commentId')
+  async findOne(
+    @Param('ticketId', ParseIntPipe) ticketId: number,
+    @Param('commentId', ParseIntPipe) commentId: number,
+  ): Promise<CommentResponse> {
+    const comment = await this.comments.findOneInTicket(ticketId, commentId);
+    const mentionedUsers = await this.mentions.getMentionedUsersFor(
+      comment.id,
+    );
+    return this.toResponse(comment, mentionedUsers);
+  }
+
   @Patch(':commentId')
   @HttpCode(HttpStatus.OK)
   async update(
